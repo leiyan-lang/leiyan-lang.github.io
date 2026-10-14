@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="打卡助手">
+<title>打卡助手</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--blue:#007AFF;--green:#34C759;--orange:#FF9500;--red:#FF3B30;--bg:#f2f2f7;--card:#fff;--text:#1c1c1e;--text2:#8e8e93;--border:#e5e5ea}
+body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);min-height:100vh;min-height:100dvh;padding-bottom:env(safe-area-inset-bottom,20px)}
+.header{background:var(--card);padding:16px 20px;text-align:center;font-size:18px;font-weight:700;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10}
+.header small{display:block;font-size:13px;color:var(--text2);font-weight:400;margin-top:2px}
+.container{max-width:480px;margin:0 auto;padding:16px}
+.card{background:var(--card);border-radius:14px;padding:20px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.card-title{font-size:15px;font-weight:600;margin-bottom:14px;color:var(--text2)}
+.clock-btns{display:flex;gap:12px;margin-bottom:16px}
+.clock-btn{flex:1;padding:18px 12px;border:none;border-radius:14px;font-size:17px;font-weight:700;cursor:pointer;color:#fff;transition:all .15s;-webkit-tap-highlight-color:transparent}
+.clock-btn:active{transform:scale(.96);opacity:.85}
+.clock-btn:disabled{opacity:.4;cursor:not-allowed;transform:none}
+.btn-in{background:var(--green)}
+.btn-out{background:var(--orange)}
+.time-display{text-align:center;padding:12px;background:var(--bg);border-radius:10px;margin-bottom:12px}
+.time-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:15px}
+.time-row .label{color:var(--text2)}
+.time-row .value{font-weight:600;font-family:"SF Mono",monospace}
+.overtime-badge{display:inline-block;background:var(--red);color:#fff;padding:6px 16px;border-radius:20px;font-size:16px;font-weight:700;margin-top:8px}
+.overtime-badge.zero{background:var(--green)}
+.settings-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)}
+.settings-row:last-child{border-bottom:none}
+.settings-row label{font-size:15px;color:var(--text2)}
+.settings-row input{width:90px;padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:15px;text-align:center;background:var(--bg)}
+.stats-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;text-align:center}
+.stat-item{padding:12px 4px;background:var(--bg);border-radius:10px}
+.stat-num{font-size:22px;font-weight:800;color:var(--blue)}
+.stat-num.warn{color:var(--red)}
+.stat-label{font-size:12px;color:var(--text2);margin-top:4px}
+.record-item{display:flex;justify-content:space-between;align-items:center;padding:14px 0;border-bottom:1px solid var(--border)}
+.record-item:last-child{border-bottom:none}
+.record-date{font-weight:600;font-size:15px}
+.record-time{font-size:13px;color:var(--text2);margin-top:2px;font-family:"SF Mono",monospace}
+.record-time .ot{color:var(--red);font-weight:600}
+.record-time .late{color:var(--orange);font-weight:600}
+.record-right{display:flex;align-items:center;gap:10px}
+.delete-btn{background:none;border:none;color:var(--red);font-size:14px;cursor:pointer;padding:4px 8px;-webkit-tap-highlight-color:transparent}
+.empty{text-align:center;padding:30px;color:var(--text2);font-size:14px}
+.toggle-settings{width:100%;padding:12px;background:none;border:1px solid var(--border);border-radius:10px;font-size:15px;color:var(--blue);cursor:pointer;margin-bottom:12px}
+.settings-panel{display:none}
+.settings-panel.show{display:block}
+</style>
+</head>
+<body>
+<div class="header">打卡助手<small id="todayDate"></small></div>
+<div class="container">
+  <!-- 打卡区域 -->
+  <div class="card">
+    <div class="clock-btns">
+      <button class="clock-btn btn-in" id="btnIn" onclick="clockIn()">上班打卡</button>
+      <button class="clock-btn btn-out" id="btnOut" onclick="clockOut()" disabled>下班打卡</button>
+    </div>
+    <div id="todayStatus"></div>
+  </div>
+
+  <!-- 设置区域 -->
+  <button class="toggle-settings" onclick="toggleSettings()">⚙️ 工时设置</button>
+  <div class="card settings-panel" id="settingsPanel">
+    <div class="card-title">每日工时配置</div>
+    <div class="settings-row">
+      <label>上班时间</label>
+      <input type="time" id="setWorkStart" value="09:00">
+    </div>
+    <div class="settings-row">
+      <label>下班时间</label>
+      <input type="time" id="setWorkEnd" value="18:00">
+    </div>
+    <div class="settings-row">
+      <label>标准工时(小时)</label>
+      <input type="number" id="setStdHours" value="8" min="1" max="24" step="0.5">
+    </div>
+    <div class="settings-row">
+      <label>加班缓冲(分钟)</label>
+      <input type="number" id="setBuffer" value="0" min="0" max="120">
+    </div>
+    <div style="text-align:center;margin-top:14px">
+      <button onclick="saveSettings()" style="padding:10px 32px;background:var(--blue);color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer">保存设置</button>
+    </div>
+  </div>
+
+  <!-- 本月统计 -->
+  <div class="card">
+    <div class="card-title">本月统计</div>
+    <div class="stats-grid">
+      <div class="stat-item"><div class="stat-num" id="statDays">0</div><div class="stat-label">出勤天数</div></div>
+      <div class="stat-item"><div class="stat-num" id="statOT">0h</div><div class="stat-label">加班时长</div></div>
+      <div class="stat-item"><div class="stat-num warn" id="statLate">0</div><div class="stat-label">迟到次数</div></div>
+    </div>
+  </div>
+
+  <!-- 历史记录 -->
+  <div class="card">
+    <div class="card-title">历史记录</div>
+    <div id="recordList"></div>
+  </div>
+</div>
+
+<script>
+const STORAGE_KEY = 'clock_records_v2';
+const SETTINGS_KEY = 'clock_settings_v2';
+
+function getSettings() {
+  const def = { workStart: '09:00', workEnd: '18:00', stdHours: 8, buffer: 0 };
+  try { const s = JSON.parse(localStorage.getItem(SETTINGS_KEY)); return s ? { ...def, ...s } : def; } catch { return def; }
+}
+
+function getRecords() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch { return []; }
+}
+
+function saveRecords(records) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+}
+
+function today() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function nowTime() {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+
+function timeToMin(t) {
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + m;
+}
+
+function minToH(m) {
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  return mm > 0 ? `${h}h${mm}m` : `${h}h`;
+}
+
+function toggleSettings() {
+  document.getElementById('settingsPanel').classList.toggle('show');
+}
+
+function saveSettings() {
+  const s = {
+    workStart: document.getElementById('setWorkStart').value,
+    workEnd: document.getElementById('setWorkEnd').value,
+    stdHours: parseFloat(document.getElementById('setStdHours').value) || 8,
+    buffer: parseInt(document.getElementById('setBuffer').value) || 0
+  };
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+  alert('设置已保存');
+  render();
+}
+
+function clockIn() {
+  const t = today();
+  let records = getRecords();
+  const existing = records.find(r => r.date === t);
+  if (existing && existing.clockIn) { alert('今天已经打过上班卡了'); return; }
+  if (existing) {
+    existing.clockIn = nowTime();
+  } else {
+    records.unshift({ date: t, clockIn: nowTime(), clockOut: null });
+  }
+  saveRecords(records);
+  render();
+}
+
+function clockOut() {
+  const t = today();
+  let records = getRecords();
+  const existing = records.find(r => r.date === t);
+  if (!existing || !existing.clockIn) { alert('请先打上班卡'); return; }
+  if (existing.clockOut) { alert('今天已经打过下班卡了'); return; }
+  existing.clockOut = nowTime();
+  saveRecords(records);
+  render();
+}
+
+function deleteRecord(date) {
+  if (!confirm('确定删除这条记录？')) return;
+  let records = getRecords().filter(r => r.date !== date);
+  saveRecords(records);
+  render();
+}
+
+function render() {
+  const settings = getSettings();
+  const records = getRecords();
+  const t = today();
+  const todayRec = records.find(r => r.date === t);
+
+  // 日期显示
+  const d = new Date();
+  const weekdays = ['日','一','二','三','四','五','六'];
+  document.getElementById('todayDate').textContent =
+    `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日 星期${weekdays[d.getDay()]}`;
+
+  // 加载设置到输入框
+  document.getElementById('setWorkStart').value = settings.workStart;
+  document.getElementById('setWorkEnd').value = settings.workEnd;
+  document.getElementById('setStdHours').value = settings.stdHours;
+  document.getElementById('setBuffer').value = settings.buffer;
+
+  // 打卡按钮状态
+  const btnIn = document.getElementById('btnIn');
+  const btnOut = document.getElementById('btnOut');
+  if (todayRec && todayRec.clockIn) {
+    btnIn.disabled = true;
+    btnIn.textContent = '已打卡 ✓';
+    btnOut.disabled = !!todayRec.clockOut;
+    if (todayRec.clockOut) btnOut.textContent = '已打卡 ✓';
+    else btnOut.textContent = '下班打卡';
+  } else {
+    btnIn.disabled = false;
+    btnIn.textContent = '上班打卡';
+    btnOut.disabled = true;
+    btnOut.textContent = '下班打卡';
+  }
+
+  // 今日状态
+  const statusDiv = document.getElementById('todayStatus');
+  if (todayRec && todayRec.clockIn) {
+    let html = `<div class="time-display">
+      <div class="time-row"><span class="label">上班</span><span class="value">${todayRec.clockIn}</span></div>
+      <div class="time-row"><span class="label">下班</span><span class="value">${todayRec.clockOut || '—'}</span></div>`;
+    if (todayRec.clockOut) {
+      const workMin = timeToMin(todayRec.clockOut) - timeToMin(todayRec.clockIn);
+      const bufferMin = settings.buffer;
+      const stdMin = settings.stdHours * 60;
+      const otMin = Math.max(0, workMin - stdMin - bufferMin);
+      const isLate = timeToMin(todayRec.clockIn) > timeToMin(settings.workStart);
+      html += `<div class="time-row"><span class="label">在岗</span><span class="value">${minToH(workMin)}</span></div>`;
+      html += `<div style="text-align:center"><span class="overtime-badge ${otMin <= 0 ? 'zero' : ''}">${otMin > 0 ? '加班 ' + minToH(otMin) : '无加班 ✓'}</span></div>`;
+      if (isLate) html += `<div style="text-align:center;margin-top:6px;font-size:13px;color:var(--orange)">⚠️ 迟到</div>`;
+    }
+    html += '</div>';
+    statusDiv.innerHTML = html;
+  } else {
+    statusDiv.innerHTML = '<div class="empty">今天还没有打卡记录</div>';
+  }
+
+  // 本月统计
+  const ym = t.substring(0, 7);
+  const monthRecs = records.filter(r => r.date.startsWith(ym) && r.clockIn && r.clockOut);
+  let totalOT = 0, lateCount = 0;
+  monthRecs.forEach(r => {
+    const workMin = timeToMin(r.clockOut) - timeToMin(r.clockIn);
+    const otMin = Math.max(0, workMin - settings.stdHours * 60 - settings.buffer);
+    totalOT += otMin;
+    if (timeToMin(r.clockIn) > timeToMin(settings.workStart)) lateCount++;
+  });
+  document.getElementById('statDays').textContent = monthRecs.length;
+  document.getElementById('statOT').textContent = minToH(totalOT);
+  document.getElementById('statLate').textContent = lateCount;
+
+  // 历史记录
+  const listDiv = document.getElementById('recordList');
+  if (records.length === 0) {
+    listDiv.innerHTML = '<div class="empty">暂无记录</div>';
+    return;
+  }
+  let html = '';
+  records.forEach(r => {
+    let timeStr = `${r.clockIn} → ${r.clockOut || '—'}`;
+    let tags = '';
+    if (r.clockIn && r.clockOut) {
+      const workMin = timeToMin(r.clockOut) - timeToMin(r.clockIn);
+      const otMin = Math.max(0, workMin - settings.stdHours * 60 - settings.buffer);
+      if (otMin > 0) tags += ` <span class="ot">+${minToH(otMin)}</span>`;
+      if (timeToMin(r.clockIn) > timeToMin(settings.workStart)) tags += ' <span class="late">迟到</span>';
+    }
+    html += `<div class="record-item">
+      <div><div class="record-date">${r.date}</div><div class="record-time">${timeStr}${tags}</div></div>
+      <div class="record-right"><button class="delete-btn" onclick="deleteRecord('${r.date}')">删除</button></div>
+    </div>`;
+  });
+  listDiv.innerHTML = html;
+}
+
+render();
+</script>
+</body>
+</html>
