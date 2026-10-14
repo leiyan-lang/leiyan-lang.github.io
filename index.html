@@ -37,24 +37,37 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","M
 .stat-num{font-size:22px;font-weight:800;color:var(--blue)}
 .stat-num.warn{color:var(--red)}
 .stat-label{font-size:12px;color:var(--text2);margin-top:4px}
+.stat-avg{font-size:11px;color:var(--text2);margin-top:2px}
 .record-item{display:flex;justify-content:space-between;align-items:center;padding:14px 0;border-bottom:1px solid var(--border)}
 .record-item:last-child{border-bottom:none}
 .record-date{font-weight:600;font-size:15px}
 .record-time{font-size:13px;color:var(--text2);margin-top:2px;font-family:"SF Mono",monospace}
 .record-time .ot{color:var(--red);font-weight:600}
 .record-time .late{color:var(--orange);font-weight:600}
-.record-right{display:flex;align-items:center;gap:10px}
-.delete-btn{background:none;border:none;color:var(--red);font-size:14px;cursor:pointer;padding:4px 8px;-webkit-tap-highlight-color:transparent}
+.record-right{display:flex;align-items:center;gap:6px}
+.action-btn{background:none;border:none;font-size:14px;cursor:pointer;padding:4px 8px;-webkit-tap-highlight-color:transparent}
+.action-btn.edit{color:var(--blue)}
+.action-btn.del{color:var(--red)}
 .empty{text-align:center;padding:30px;color:var(--text2);font-size:14px}
 .toggle-settings{width:100%;padding:12px;background:none;border:1px solid var(--border);border-radius:10px;font-size:15px;color:var(--blue);cursor:pointer;margin-bottom:12px}
 .settings-panel{display:none}
 .settings-panel.show{display:block}
+.modal-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.45);z-index:100;justify-content:center;align-items:center}
+.modal-overlay.show{display:flex}
+.modal{background:var(--card);border-radius:16px;padding:24px;width:90%;max-width:360px}
+.modal h3{font-size:17px;margin-bottom:16px;text-align:center}
+.modal-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.modal-row label{font-size:15px;color:var(--text2)}
+.modal-row input{width:130px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:16px;text-align:center;background:var(--bg)}
+.modal-btns{display:flex;gap:10px;margin-top:18px}
+.modal-btns button{flex:1;padding:12px;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer}
+.modal-btns .cancel{background:var(--bg);color:var(--text)}
+.modal-btns .confirm{background:var(--blue);color:#fff}
 </style>
 </head>
 <body>
 <div class="header">打卡助手<small id="todayDate"></small></div>
 <div class="container">
-  <!-- 打卡区域 -->
   <div class="card">
     <div class="clock-btns">
       <button class="clock-btn btn-in" id="btnIn" onclick="clockIn()">上班打卡</button>
@@ -63,7 +76,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","M
     <div id="todayStatus"></div>
   </div>
 
-  <!-- 设置区域 -->
   <button class="toggle-settings" onclick="toggleSettings()">⚙️ 工时设置</button>
   <div class="card settings-panel" id="settingsPanel">
     <div class="card-title">每日工时配置</div>
@@ -88,26 +100,62 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","M
     </div>
   </div>
 
-  <!-- 本月统计 -->
   <div class="card">
     <div class="card-title">本月统计</div>
     <div class="stats-grid">
-      <div class="stat-item"><div class="stat-num" id="statDays">0</div><div class="stat-label">出勤天数</div></div>
-      <div class="stat-item"><div class="stat-num" id="statOT">0h</div><div class="stat-label">加班时长</div></div>
-      <div class="stat-item"><div class="stat-num warn" id="statLate">0</div><div class="stat-label">迟到次数</div></div>
+      <div class="stat-item"><div class="stat-num" id="statDays">0</div><div class="stat-label">出勤天数</div><div class="stat-avg" id="statAvgMonth">—</div></div>
+      <div class="stat-item"><div class="stat-num" id="statOT">0h</div><div class="stat-label">加班时长</div><div class="stat-avg" id="statAvgMonthOt">—</div></div>
+      <div class="stat-item"><div class="stat-num warn" id="statLate">0</div><div class="stat-label">迟到次数</div><div class="stat-avg" id="statAvgMonthLate">—</div></div>
     </div>
   </div>
 
-  <!-- 历史记录 -->
+  <div class="card">
+    <div class="card-title">本周统计</div>
+    <div class="stats-grid">
+      <div class="stat-item"><div class="stat-num" id="statWeekDays">0</div><div class="stat-label">出勤天数</div><div class="stat-avg" id="statAvgWeek">—</div></div>
+      <div class="stat-item"><div class="stat-num" id="statWeekOT">0h</div><div class="stat-label">加班时长</div><div class="stat-avg" id="statAvgWeekOt">—</div></div>
+      <div class="stat-item"><div class="stat-num warn" id="statWeekLate">0</div><div class="stat-label">迟到次数</div><div class="stat-avg" id="statAvgWeekLate">—</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">近三个月统计</div>
+    <div class="stats-grid">
+      <div class="stat-item"><div class="stat-num" id="stat3mDays">0</div><div class="stat-label">出勤天数</div><div class="stat-avg" id="statAvg3m">—</div></div>
+      <div class="stat-item"><div class="stat-num" id="stat3mOT">0h</div><div class="stat-label">加班时长</div><div class="stat-avg" id="statAvg3mOt">—</div></div>
+      <div class="stat-item"><div class="stat-num warn" id="stat3mLate">0</div><div class="stat-label">迟到次数</div><div class="stat-avg" id="statAvg3mLate">—</div></div>
+    </div>
+  </div>
+
   <div class="card">
     <div class="card-title">历史记录</div>
     <div id="recordList"></div>
   </div>
 </div>
 
+<!-- 修改打卡时间弹窗 -->
+<div class="modal-overlay" id="editModal">
+  <div class="modal">
+    <h3 id="editModalTitle">修改打卡时间</h3>
+    <div class="modal-row">
+      <label>上班打卡</label>
+      <input type="time" id="editClockIn">
+    </div>
+    <div class="modal-row">
+      <label>下班打卡</label>
+      <input type="time" id="editClockOut">
+    </div>
+    <div class="modal-btns">
+      <button class="cancel" onclick="closeEditModal()">取消</button>
+      <button class="confirm" onclick="saveEditTime()">保存</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const STORAGE_KEY = 'clock_records_v2';
 const SETTINGS_KEY = 'clock_settings_v2';
+let editingDate = null;
 
 function getSettings() {
   const def = { workStart: '09:00', workEnd: '18:00', stdHours: 8, buffer: 0 };
@@ -138,9 +186,15 @@ function timeToMin(t) {
 }
 
 function minToH(m) {
+  if (m <= 0) return '0h';
   const h = Math.floor(m / 60);
   const mm = m % 60;
   return mm > 0 ? `${h}h${mm}m` : `${h}h`;
+}
+
+function avgLabel(totalMin, days) {
+  if (days <= 0) return '—';
+  return `平均 ${minToH(Math.round(totalMin / days))}/天`;
 }
 
 function toggleSettings() {
@@ -191,33 +245,73 @@ function deleteRecord(date) {
   render();
 }
 
+function openEditModal(date) {
+  editingDate = date;
+  const records = getRecords();
+  const rec = records.find(r => r.date === date);
+  if (!rec) return;
+  document.getElementById('editModalTitle').textContent = `修改 ${date} 打卡时间`;
+  document.getElementById('editClockIn').value = rec.clockIn || '';
+  document.getElementById('editClockOut').value = rec.clockOut || '';
+  document.getElementById('editModal').classList.add('show');
+}
+
+function closeEditModal() {
+  document.getElementById('editModal').classList.remove('show');
+  editingDate = null;
+}
+
+function saveEditTime() {
+  const ci = document.getElementById('editClockIn').value;
+  const co = document.getElementById('editClockOut').value;
+  if (!ci) { alert('上班时间不能为空'); return; }
+  if (co && timeToMin(co) <= timeToMin(ci)) { alert('下班时间必须晚于上班时间'); return; }
+  const records = getRecords();
+  const rec = records.find(r => r.date === editingDate);
+  if (!rec) return;
+  rec.clockIn = ci;
+  rec.clockOut = co || null;
+  saveRecords(records);
+  closeEditModal();
+  render();
+}
+
+function calcStats(list, settings) {
+  let days = 0, totalOT = 0, late = 0;
+  list.forEach(r => {
+    if (!r.clockIn || !r.clockOut) return;
+    const workMin = timeToMin(r.clockOut) - timeToMin(r.clockIn);
+    const otMin = Math.max(0, workMin - settings.stdHours * 60 - settings.buffer);
+    days++;
+    totalOT += otMin;
+    if (timeToMin(r.clockIn) > timeToMin(settings.workStart)) late++;
+  });
+  return { days, totalOT, late };
+}
+
 function render() {
   const settings = getSettings();
   const records = getRecords();
   const t = today();
   const todayRec = records.find(r => r.date === t);
 
-  // 日期显示
   const d = new Date();
   const weekdays = ['日','一','二','三','四','五','六'];
   document.getElementById('todayDate').textContent =
     `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日 星期${weekdays[d.getDay()]}`;
 
-  // 加载设置到输入框
   document.getElementById('setWorkStart').value = settings.workStart;
   document.getElementById('setWorkEnd').value = settings.workEnd;
   document.getElementById('setStdHours').value = settings.stdHours;
   document.getElementById('setBuffer').value = settings.buffer;
 
-  // 打卡按钮状态
   const btnIn = document.getElementById('btnIn');
   const btnOut = document.getElementById('btnOut');
   if (todayRec && todayRec.clockIn) {
     btnIn.disabled = true;
     btnIn.textContent = '已打卡 ✓';
     btnOut.disabled = !!todayRec.clockOut;
-    if (todayRec.clockOut) btnOut.textContent = '已打卡 ✓';
-    else btnOut.textContent = '下班打卡';
+    btnOut.textContent = todayRec.clockOut ? '已打卡 ✓' : '下班打卡';
   } else {
     btnIn.disabled = false;
     btnIn.textContent = '上班打卡';
@@ -225,7 +319,6 @@ function render() {
     btnOut.textContent = '下班打卡';
   }
 
-  // 今日状态
   const statusDiv = document.getElementById('todayStatus');
   if (todayRec && todayRec.clockIn) {
     let html = `<div class="time-display">
@@ -233,9 +326,7 @@ function render() {
       <div class="time-row"><span class="label">下班</span><span class="value">${todayRec.clockOut || '—'}</span></div>`;
     if (todayRec.clockOut) {
       const workMin = timeToMin(todayRec.clockOut) - timeToMin(todayRec.clockIn);
-      const bufferMin = settings.buffer;
-      const stdMin = settings.stdHours * 60;
-      const otMin = Math.max(0, workMin - stdMin - bufferMin);
+      const otMin = Math.max(0, workMin - settings.stdHours * 60 - settings.buffer);
       const isLate = timeToMin(todayRec.clockIn) > timeToMin(settings.workStart);
       html += `<div class="time-row"><span class="label">在岗</span><span class="value">${minToH(workMin)}</span></div>`;
       html += `<div style="text-align:center"><span class="overtime-badge ${otMin <= 0 ? 'zero' : ''}">${otMin > 0 ? '加班 ' + minToH(otMin) : '无加班 ✓'}</span></div>`;
@@ -247,45 +338,12 @@ function render() {
     statusDiv.innerHTML = '<div class="empty">今天还没有打卡记录</div>';
   }
 
-  // 本月统计
+  // 本月
   const ym = t.substring(0, 7);
   const monthRecs = records.filter(r => r.date.startsWith(ym) && r.clockIn && r.clockOut);
-  let totalOT = 0, lateCount = 0;
-  monthRecs.forEach(r => {
-    const workMin = timeToMin(r.clockOut) - timeToMin(r.clockIn);
-    const otMin = Math.max(0, workMin - settings.stdHours * 60 - settings.buffer);
-    totalOT += otMin;
-    if (timeToMin(r.clockIn) > timeToMin(settings.workStart)) lateCount++;
-  });
-  document.getElementById('statDays').textContent = monthRecs.length;
-  document.getElementById('statOT').textContent = minToH(totalOT);
-  document.getElementById('statLate').textContent = lateCount;
-
-  // 历史记录
-  const listDiv = document.getElementById('recordList');
-  if (records.length === 0) {
-    listDiv.innerHTML = '<div class="empty">暂无记录</div>';
-    return;
-  }
-  let html = '';
-  records.forEach(r => {
-    let timeStr = `${r.clockIn} → ${r.clockOut || '—'}`;
-    let tags = '';
-    if (r.clockIn && r.clockOut) {
-      const workMin = timeToMin(r.clockOut) - timeToMin(r.clockIn);
-      const otMin = Math.max(0, workMin - settings.stdHours * 60 - settings.buffer);
-      if (otMin > 0) tags += ` <span class="ot">+${minToH(otMin)}</span>`;
-      if (timeToMin(r.clockIn) > timeToMin(settings.workStart)) tags += ' <span class="late">迟到</span>';
-    }
-    html += `<div class="record-item">
-      <div><div class="record-date">${r.date}</div><div class="record-time">${timeStr}${tags}</div></div>
-      <div class="record-right"><button class="delete-btn" onclick="deleteRecord('${r.date}')">删除</button></div>
-    </div>`;
-  });
-  listDiv.innerHTML = html;
-}
-
-render();
-</script>
-</body>
-</html>
+  const ms = calcStats(monthRecs, settings);
+  document.getElementById('statDays').textContent = ms.days;
+  document.getElementById('statOT').textContent = minToH(ms.totalOT);
+  document.getElementById('statLate').textContent = ms.late;
+  document.getElementById('statAvgMonth').textContent = avgLabel(ms.totalOT, ms.days);
+  document.getElementById('
