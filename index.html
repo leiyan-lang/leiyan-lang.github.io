@@ -88,12 +88,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","M
       <input type="time" id="setWorkEnd" value="18:00">
     </div>
     <div class="settings-row">
-      <label>标准工时(小时)</label>
-      <input type="number" id="setStdHours" value="8" min="1" max="24" step="0.5">
+      <label>上班弹性(分钟)</label>
+      <input type="number" id="setFlex" value="30" min="0" max="120">
     </div>
     <div class="settings-row">
       <label>加班缓冲(分钟)</label>
-      <input type="number" id="setBuffer" value="0" min="0" max="120">
+      <input type="number" id="setBuffer" value="30" min="0" max="120">
     </div>
     <div style="text-align:center;margin-top:14px">
       <button id="saveSettingsBtn" style="padding:10px 32px;background:var(--blue);color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer">保存设置</button>
@@ -133,7 +133,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","M
   </div>
 </div>
 
-<!-- 修改打卡时间弹窗 -->
 <div class="modal-overlay" id="editModal">
   <div class="modal">
     <h3 id="editModalTitle">修改打卡时间</h3>
@@ -154,248 +153,140 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","M
 
 <script>
 (function(){
-  const STORAGE_KEY = 'clock_records_v2';
-  const SETTINGS_KEY = 'clock_settings_v2';
+  const STORAGE_KEY = 'clock_records_v5';
+  const SETTINGS_KEY = 'clock_settings_v5';
   let editingDate = null;
 
   function getSettings(){
-    const def = {workStart:'09:00',workEnd:'18:00',stdHours:8,buffer:0};
-    try{const s=JSON.parse(localStorage.getItem(SETTINGS_KEY));return s?{...def,...s}:def}catch(e){return def}
+    const def = {workStart:'09:00', workEnd:'18:00', flexMin:30, buffer:30};
+    try{const s=JSON.parse(localStorage.getItem(SETTINGS_KEY));return s?{...def,...s}:def;}catch(e){return def;}
   }
   function getRecords(){
-    try{
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if(!raw) return [];
-      const arr = JSON.parse(raw);
-      if(!Array.isArray(arr)) return [];
-      return arr.map(r=>({
-        date: r.date||'',
-        clockIn: r.clockIn||null,
-        clockOut: r.clockOut||null
-      })).filter(r=>r.date);
-    }catch(e){
-      console.warn('records parse error, reset');
-      return [];
-    }
+    try{const raw=localStorage.getItem(STORAGE_KEY);if(!raw)return[];const arr=JSON.parse(raw);if(!Array.isArray(arr))return[];return arr.map(r=>({date:r.date||'',clockIn:r.clockIn||null,clockOut:r.clockOut||null})).filter(r=>r.date);}catch(e){return [];}
   }
-  function saveRecords(records){localStorage.setItem(STORAGE_KEY,JSON.stringify(records))}
+  function saveRecords(r){localStorage.setItem(STORAGE_KEY,JSON.stringify(r));}
+  function todayStr(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+  function nowTime(){const d=new Date();return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');}
+  function timeToMin(t){const[h,m]=t.split(':').map(Number);return h*60+m;}
+  function minToH(m){if(m<=0)return'0h';const h=Math.floor(m/60),mm=m%60;return mm>0?h+'h'+mm+'m':h+'h';}
+  function avgLabel(totalMin,days){if(days<=0)return'—';return'平均 '+minToH(Math.round(totalMin/days))+'/天';}
 
-  function todayStr(){
-    const d=new Date();
-    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  // 只算下班时间之后的部分，减去缓冲
+  function calcOvertime(clockOut, settings){
+    const outMin=timeToMin(clockOut), endMin=timeToMin(settings.workEnd), buf=settings.buffer||0;
+    return Math.max(0, Math.round(outMin-endMin-buf));
   }
-  function nowTime(){
-    const d=new Date();
-    return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  // 超过「上班时间+弹性」算迟到
+  function isLate(clockIn, settings){
+    return timeToMin(clockIn) > timeToMin(settings.workStart)+(settings.flexMin||0);
   }
-  function timeToMin(t){const[h,m]=t.split(':').map(Number);return h*60+m}
-  function minToH(m){if(m<=0)return '0h';const h=Math.floor(m/60),mm=m%60;return mm>0?h+'h'+mm+'m':h+'h'}
-  function avgLabel(totalMin,days){if(days<=0)return '—';return '平均 '+minToH(Math.round(totalMin/days))+'/天'}
+  function calcStats(list, settings){
+    let days=0,totalOT=0,late=0;
+    list.forEach(r=>{if(!r.clockIn||!r.clockOut)return;days++;totalOT+=calcOvertime(r.clockOut,settings);if(isLate(r.clockIn,settings))late++;});
+    return {days,totalOT,late};
+  }
 
-  // ---- 打卡 ----
   function clockIn(){
-    const t=todayStr();let records=getRecords();
-    const ex=records.find(r=>r.date===t);
-    if(ex&&ex.clockIn){alert('今天已经打过上班卡了');return}
-    if(ex){ex.clockIn=nowTime()}else{records.unshift({date:t,clockIn:nowTime(),clockOut:null})}
+    const t=todayStr();let records=getRecords();const ex=records.find(r=>r.date===t);
+    if(ex&&ex.clockIn){alert('今天已经打过上班卡了');return;}
+    if(ex)ex.clockIn=nowTime();else records.unshift({date:t,clockIn:nowTime(),clockOut:null});
     saveRecords(records);render();
   }
   function clockOut(){
-    const t=todayStr();let records=getRecords();
-    const ex=records.find(r=>r.date===t);
-    if(!ex||!ex.clockIn){alert('请先打上班卡');return}
-    if(ex.clockOut){alert('今天已经打过下班卡了');return}
+    const t=todayStr();let records=getRecords();const ex=records.find(r=>r.date===t);
+    if(!ex||!ex.clockIn){alert('请先打上班卡');return;}
+    if(ex.clockOut){alert('今天已经打过下班卡了');return;}
     ex.clockOut=nowTime();saveRecords(records);render();
   }
-
-  // ---- 删除 ----
-  function deleteRecord(date){
-    if(!confirm('确定删除 '+date+' 的记录？'))return;
-    saveRecords(getRecords().filter(r=>r.date!==date));render();
-  }
-
-  // ---- 修改时间 ----
+  function deleteRecord(date){if(!confirm('确定删除 '+date+' 的记录？'))return;saveRecords(getRecords().filter(r=>r.date!==date));render();}
   function openEditModal(date){
-    editingDate=date;
-    const rec=getRecords().find(r=>r.date===date);
-    if(!rec)return;
+    editingDate=date;const rec=getRecords().find(r=>r.date===date);if(!rec)return;
     document.getElementById('editModalTitle').textContent='修改 '+date+' 打卡时间';
     document.getElementById('editClockIn').value=rec.clockIn||'';
     document.getElementById('editClockOut').value=rec.clockOut||'';
     document.getElementById('editModal').classList.add('show');
   }
-  function closeEditModal(){
-    document.getElementById('editModal').classList.remove('show');
-    editingDate=null;
-  }
+  function closeEditModal(){document.getElementById('editModal').classList.remove('show');editingDate=null;}
   function saveEditTime(){
-    const ci=document.getElementById('editClockIn').value.trim();
-    const co=document.getElementById('editClockOut').value.trim()||null;
-    if(!ci){alert('上班时间不能为空');return}
-    if(co&&timeToMin(co)<=timeToMin(ci)){alert('下班时间必须晚于上班时间');return}
-    const records=getRecords();
-    const rec=records.find(r=>r.date===editingDate);
-    if(!rec)return;
-    rec.clockIn=ci;rec.clockOut=co;
-    saveRecords(records);closeEditModal();render();
+    const ci=document.getElementById('editClockIn').value.trim(),co=document.getElementById('editClockOut').value.trim()||null;
+    if(!ci){alert('上班时间不能为空');return;}
+    if(co&&timeToMin(co)===timeToMin(ci)){alert('下班时间不能等于上班时间');return;}
+    const rec=getRecords().find(r=>r.date===editingDate);if(!rec)return;
+    rec.clockIn=ci;rec.clockOut=co;saveRecords(getRecords());closeEditModal();render();
   }
 
-  // ---- 统计 ----
-  function calcStats(list,settings){
-    let days=0,totalOT=0,late=0;
-    list.forEach(r=>{
-      if(!r.clockIn||!r.clockOut)return;
-      const workMin=timeToMin(r.clockOut)-timeToMin(r.clockIn);
-      const otMin=Math.max(0,workMin-settings.stdHours*60-settings.buffer);
-      days++;totalOT+=otMin;
-      if(timeToMin(r.clockIn)>timeToMin(settings.workStart))late++;
-    });
-    return {days,totalOT,late};
-  }
-
-  // ---- 渲染 ----
   function render(){
-    const settings=getSettings();
-    const records=getRecords();
-    const t=todayStr();
+    const settings=getSettings(), records=getRecords(), t=todayStr();
     const todayRec=records.find(r=>r.date===t);
-
-    const d=new Date();
-    const wd=['日','一','二','三','四','五','六'];
-    document.getElementById('todayDate').textContent=
-      d.getFullYear()+'年'+(d.getMonth()+1)+'月'+d.getDate()+'日 星期'+wd[d.getDay()];
-
+    const d=new Date(), wd=['日','一','二','三','四','五','六'];
+    document.getElementById('todayDate').textContent=d.getFullYear()+'年'+(d.getMonth()+1)+'月'+d.getDate()+'日 星期'+wd[d.getDay()];
     document.getElementById('setWorkStart').value=settings.workStart;
     document.getElementById('setWorkEnd').value=settings.workEnd;
-    document.getElementById('setStdHours').value=settings.stdHours;
+    document.getElementById('setFlex').value=settings.flexMin;
     document.getElementById('setBuffer').value=settings.buffer;
 
-    const btnIn=document.getElementById('btnIn');
-    const btnOut=document.getElementById('btnOut');
-    if(todayRec&&todayRec.clockIn){
-      btnIn.disabled=true;btnIn.textContent='已打卡 ✓';
-      btnOut.disabled=!!todayRec.clockOut;
-      btnOut.textContent=todayRec.clockOut?'已打卡 ✓':'下班打卡';
-    }else{
-      btnIn.disabled=false;btnIn.textContent='上班打卡';
-      btnOut.disabled=true;btnOut.textContent='下班打卡';
-    }
+    const btnIn=document.getElementById('btnIn'), btnOut=document.getElementById('btnOut');
+    if(todayRec&&todayRec.clockIn){btnIn.disabled=true;btnIn.textContent='已打卡 ✓';btnOut.disabled=!!todayRec.clockOut;btnOut.textContent=todayRec.clockOut?'已打卡 ✓':'下班打卡';}
+    else{btnIn.disabled=false;btnIn.textContent='上班打卡';btnOut.disabled=true;btnOut.textContent='下班打卡';}
 
-    const sd=document.getElementById('todayStatus');
-    if(todayRec&&todayRec.clockIn){
-      let html='<div class="time-display">';
-      html+='<div class="time-row"><span class="label">上班</span><span class="value">'+todayRec.clockIn+'</span></div>';
-      html+='<div class="time-row"><span class="label">下班</span><span class="value">'+(todayRec.clockOut||'—')+'</span></div>';
-      if(todayRec.clockOut){
-        const workMin=timeToMin(todayRec.clockOut)-timeToMin(todayRec.clockIn);
-        const otMin=Math.max(0,workMin-settings.stdHours*60-settings.buffer);
-        const isLate=timeToMin(todayRec.clockIn)>timeToMin(settings.workStart);
-        html+='<div class="time-row"><span class="label">在岗</span><span class="value">'+minToH(workMin)+'</span></div>';
-        html+='<div style="text-align:center"><span class="overtime-badge '+(otMin<=0?'zero':'')+'">'+(otMin>0?'加班 '+minToH(otMin):'无加班 ✓')+'</span></div>';
-        if(isLate) html+='<div style="text-align:center;margin-top:6px;font-size:13px;color:var(--orange)">⚠️ 迟到</div>';
+    const statusEl=document.getElementById('todayStatus');
+    if(todayRec){
+      let h='<div class="time-display">';
+      h+='<div class="time-row"><span class="label">上班</span><span class="value">'+(todayRec.clockIn||'—')+'</span></div>';
+      h+='<div class="time-row"><span class="label">下班</span><span class="value">'+(todayRec.clockOut||'—')+'</span></div>';
+      if(todayRec.clockIn&&todayRec.clockOut){
+        const ot=calcOvertime(todayRec.clockOut,settings);
+        h+=ot>0?'<div class="overtime-badge">加班 '+minToH(ot)+'</div>':'<div class="overtime-badge zero">今日无加班</div>';
       }
-      html+='</div>';
-      sd.innerHTML=html;
-    }else{
-      sd.innerHTML='<div class="empty">今天还没有打卡记录</div>';
-    }
+      h+='</div>';statusEl.innerHTML=h;
+    }else{statusEl.innerHTML='<div class="time-display" style="color:var(--text2)">今日暂无打卡记录</div>';}
 
-    // 本月
-    const ym=t.substring(0,7);
-    const monthRecs=records.filter(r=>r.date.startsWith(ym)&&r.clockIn&&r.clockOut);
-    const ms=calcStats(monthRecs,settings);
-    document.getElementById('statDays').textContent=ms.days;
-    document.getElementById('statOT').textContent=minToH(ms.totalOT);
-    document.getElementById('statLate').textContent=ms.late;
-    document.getElementById('statAvgMonth').textContent=avgLabel(ms.totalOT,ms.days);
-    document.getElementById('statAvgMonthOt').textContent=avgLabel(ms.totalOT,ms.days);
-    document.getElementById('statAvgMonthLate').textContent=ms.late>0?'平均 '+ms.late.toFixed(1)+'次/月':'—';
+    const now=new Date(), monthStr=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
+    const mR=records.filter(r=>r.date.startsWith(monthStr)&&r.clockIn&&r.clockOut), ms=calcStats(mR,settings);
+    document.getElementById('statDays').textContent=ms.days;document.getElementById('statOT').textContent=minToH(ms.totalOT);document.getElementById('statLate').textContent=ms.late;
+    document.getElementById('statAvgMonth').textContent=avgLabel(ms.totalOT,ms.days);document.getElementById('statAvgMonthOt').textContent=avgLabel(ms.totalOT,ms.days);document.getElementById('statAvgMonthLate').textContent=ms.late>0?'平均 '+ms.late.toFixed(1)+'次':'—';
 
-    // 本周
-    const now=new Date();
-    const dayOfWeek=now.getDay();
-    const monday=new Date(now);
-    monday.setDate(now.getDate()-(dayOfWeek===0?6:dayOfWeek-1));
-    const mondayStr=monday.getFullYear()+'-'+String(monday.getMonth()+1).padStart(2,'0')+'-'+String(monday.getDate()).padStart(2,'0');
-    const weekRecs=records.filter(r=>r.date>=mondayStr&&r.clockIn&&r.clockOut);
-    const ws=calcStats(weekRecs,settings);
-    document.getElementById('statWeekDays').textContent=ws.days;
-    document.getElementById('statWeekOT').textContent=minToH(ws.totalOT);
-    document.getElementById('statWeekLate').textContent=ws.late;
-    document.getElementById('statAvgWeek').textContent=avgLabel(ws.totalOT,ws.days);
-    document.getElementById('statAvgWeekOt').textContent=avgLabel(ws.totalOT,ws.days);
-    document.getElementById('statAvgWeekLate').textContent=ws.late>0?'平均 '+ws.late.toFixed(1)+'次/周':'—';
+    const dow=now.getDay()||7, mon=new Date(now);mon.setDate(now.getDate()-dow+1);
+    const monStr=mon.getFullYear()+'-'+String(mon.getMonth()+1).padStart(2,'0')+'-'+String(mon.getDate()).padStart(2,'0');
+    const wR=records.filter(r=>r.date>=monStr&&r.clockIn&&r.clockOut), ws=calcStats(wR,settings);
+    document.getElementById('statWeekDays').textContent=ws.days;document.getElementById('statWeekOT').textContent=minToH(ws.totalOT);document.getElementById('statWeekLate').textContent=ws.late;
+    document.getElementById('statAvgWeek').textContent=avgLabel(ws.totalOT,ws.days);document.getElementById('statAvgWeekOt').textContent=avgLabel(ws.totalOT,ws.days);document.getElementById('statAvgWeekLate').textContent=ws.late>0?'本周 '+ws.late+'次':'—';
 
-    // 近三个月
-    const threeMonthsAgo=new Date();
-    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth()-3);
-    const threeMonthsAgoStr=threeMonthsAgo.getFullYear()+'-'+String(threeMonthsAgo.getMonth()+1).padStart(2,'0')+'-'+String(threeMonthsAgo.getDate()).padStart(2,'0');
-    const threeMonthsRecs=records.filter(r=>r.date>=threeMonthsAgoStr&&r.clockIn&&r.clockOut);
-    const ts=calcStats(threeMonthsRecs,settings);
-    document.getElementById('stat3mDays').textContent=ts.days;
-    document.getElementById('stat3mOT').textContent=minToH(ts.totalOT);
-    document.getElementById('stat3mLate').textContent=ts.late;
-    document.getElementById('statAvg3m').textContent=avgLabel(ts.totalOT,ts.days);
-    document.getElementById('statAvg3mOt').textContent=avgLabel(ts.totalOT,ts.days);
-    document.getElementById('statAvg3mLate').textContent=ts.late>0?'平均 '+ts.late.toFixed(1)+'次/月':'—';
+    const ago=new Date(now);ago.setMonth(now.getMonth()-3);
+    const agoStr=ago.getFullYear()+'-'+String(ago.getMonth()+1).padStart(2,'0')+'-'+String(ago.getDate()).padStart(2,'0');
+    const tR=records.filter(r=>r.date>=agoStr&&r.clockIn&&r.clockOut), ts=calcStats(tR,settings);
+    document.getElementById('stat3mDays').textContent=ts.days;document.getElementById('stat3mOT').textContent=minToH(ts.totalOT);document.getElementById('stat3mLate').textContent=ts.late;
+    document.getElementById('statAvg3m').textContent=avgLabel(ts.totalOT,ts.days);document.getElementById('statAvg3mOt').textContent=avgLabel(ts.totalOT,ts.days);document.getElementById('statAvg3mLate').textContent=ts.late>0?'平均 '+ts.late.toFixed(1)+'次/月':'—';
 
-    // 历史记录列表（按日期倒序，最多显示30条）
     const list=document.getElementById('recordList');
-    const sorted=[...records].sort((a,b)=>b.date.localeCompare(a.date));
-    if(sorted.length===0){
-      list.innerHTML='<div class="empty">暂无打卡记录</div>';
-      return;
-    }
-    list.innerHTML=sorted.slice(0,30).map(r=>{
-      let timeHtml='';
-      if(r.clockIn) timeHtml+='<span class="label">上班</span><span class="value">'+r.clockIn+'</span>';
-      if(r.clockOut) timeHtml+='<span class="label" style="margin-left:12px">下班</span><span class="value">'+r.clockOut+'</span>';
+    if(records.length===0){list.innerHTML='<div class="empty">暂无记录</div>';return;}
+    list.innerHTML=records.slice(0,60).map(r=>{
+      let right='', info='';
       if(r.clockIn&&r.clockOut){
-        const workMin=timeToMin(r.clockOut)-timeToMin(r.clockIn);
-        const otMin=Math.max(0,workMin-settings.stdHours*60-settings.buffer);
-        const isLate=timeToMin(r.clockIn)>timeToMin(settings.workStart);
-        if(otMin>0) timeHtml+=' <span class="ot">加班'+minToH(otMin)+'</span>';
-        if(isLate) timeHtml+=' <span class="late">迟到</span>';
-      }
-      return '<div class="record-item"><div><div class="record-date">'+r.date+'</div><div class="record-time">'+timeHtml+'</div></div><div class="record-right"><button class="action-btn edit" data-date="'+r.date+'">修改</button><button class="action-btn del" data-date="'+r.date+'">删除</button></div></div>';
+        const ot=calcOvertime(r.clockOut,settings), lt=isLate(r.clockIn,settings);
+        info=(lt?'<span class="late">迟到</span> ':'')+(ot>0?'<span class="ot">加班'+minToH(ot)+'</span>':'');
+      }else{info='<span style="color:var(--orange)">未完整</span>';}
+      right+='<div class="record-right"><button class="action-btn edit" data-date="'+r.date+'">修改</button><button class="action-btn del" data-date="'+r.date+'">删除</button></div>';
+      return '<div class="record-item"><div><div class="record-date">'+r.date+'</div><div class="record-time">'+(r.clockIn||'—')+' ~ '+(r.clockOut||'—')+' '+info+'</div></div>'+right+'</div>';
     }).join('');
-
-    // 绑定修改/删除按钮
-    list.querySelectorAll('.action-btn.edit').forEach(btn=>{
-      btn.addEventListener('click',()=>openEditModal(btn.dataset.date));
-    });
-    list.querySelectorAll('.action-btn.del').forEach(btn=>{
-      btn.addEventListener('click',()=>deleteRecord(btn.dataset.date));
-    });
   }
 
-  // ---- 事件绑定 ----
   document.getElementById('btnIn').addEventListener('click',clockIn);
   document.getElementById('btnOut').addEventListener('click',clockOut);
-
-  document.getElementById('toggleSettings').addEventListener('click',()=>{
-    document.getElementById('settingsPanel').classList.toggle('show');
-  });
-
+  document.getElementById('toggleSettings').addEventListener('click',()=>document.getElementById('settingsPanel').classList.toggle('show'));
   document.getElementById('saveSettingsBtn').addEventListener('click',()=>{
-    const settings={
-      workStart:document.getElementById('setWorkStart').value,
-      workEnd:document.getElementById('setWorkEnd').value,
-      stdHours:parseFloat(document.getElementById('setStdHours').value)||8,
-      buffer:parseInt(document.getElementById('setBuffer').value)||0
-    };
-    localStorage.setItem(SETTINGS_KEY,JSON.stringify(settings));
-    alert('设置已保存');
-    render();
+    const s={workStart:document.getElementById('setWorkStart').value,workEnd:document.getElementById('setWorkEnd').value,flexMin:parseInt(document.getElementById('setFlex').value)||0,buffer:parseInt(document.getElementById('setBuffer').value)||0};
+    localStorage.setItem(SETTINGS_KEY,JSON.stringify(s));document.getElementById('settingsPanel').classList.remove('show');render();
   });
-
+  document.getElementById('recordList').addEventListener('click',e=>{
+    const date=e.target.dataset.date;if(!date)return;
+    if(e.target.classList.contains('del'))deleteRecord(date);
+    if(e.target.classList.contains('edit'))openEditModal(date);
+  });
   document.getElementById('editCancel').addEventListener('click',closeEditModal);
   document.getElementById('editConfirm').addEventListener('click',saveEditTime);
-  document.getElementById('editModal').addEventListener('click',(e)=>{
-    if(e.target.id==='editModal') closeEditModal();
-  });
+  document.getElementById('editModal').addEventListener('click',e=>{if(e.target.id==='editModal')closeEditModal();});
 
-  // 初始化
   render();
 })();
 </script>
